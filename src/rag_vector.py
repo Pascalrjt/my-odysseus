@@ -164,7 +164,11 @@ class VectorRAG:
         if not metadata or not isinstance(metadata, dict):
             return False
 
-        doc_id = _generate_doc_id(text, metadata.get("owner") or "")
+        # Caller-supplied id wins. IDs default to hash(owner+text), which
+        # silently drops byte-identical chunks from *different* sources for
+        # the same owner — unsound for per-source deletion (project files).
+        # Callers that need per-source identity pass metadata["doc_id"].
+        doc_id = metadata.get("doc_id") or _generate_doc_id(text, metadata.get("owner") or "")
         wrote = False
         for lane in self._lanes:
             try:
@@ -200,7 +204,8 @@ class VectorRAG:
         attempted_new = False
         write_failed = False
         for lane in self._lanes:
-            all_ids = [_generate_doc_id(t, m.get("owner") or "") for t, m in valid]
+            # metadata["doc_id"] override — see add_document for rationale.
+            all_ids = [m.get("doc_id") or _generate_doc_id(t, m.get("owner") or "") for t, m in valid]
             try:
                 existing = lane.collection.get(ids=all_ids)
                 existing_ids = set(existing.get("ids") or [])

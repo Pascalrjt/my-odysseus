@@ -54,6 +54,7 @@ class Session:
     owner: Optional[str] = None
     is_important: bool = False
     message_count: int = 0
+    project_id: Optional[str] = None
 
     def __post_init__(self):
         if self.history is None:

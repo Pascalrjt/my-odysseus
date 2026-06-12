@@ -524,6 +524,7 @@ async def build_chat_context(
         agent_mode=agent_mode,
         incognito=incognito,
         use_skills=skills_enabled,
+        project_id=getattr(sess, "project_id", None),
     )
     if use_rag is not None:
         _preface_kwargs["use_rag"] = use_rag_val

@@ -22,6 +22,7 @@ import memoryModule from './js/memory.js';
 import voiceRecorderModule from './js/voiceRecorder.js';
 import censorModule from './js/censor.js';
 import galleryModule from './js/gallery.js';
+import projectsModule from './js/projects.js';
 import tasksModule from './js/tasks.js';
 import calendarModule from './js/calendar.js';
 import notesModule from './js/notes.js';
@@ -92,7 +93,8 @@ async function _createDirectChatFromPreferredModel() {
 
   const pending = sessionModule.getPendingChat && sessionModule.getPendingChat();
   if (pending && pending.url && pending.modelId) {
-    sessionModule.createDirectChat(pending.url, pending.modelId, pending.endpointId);
+    // Re-assert the same pending chat — keep its project membership too.
+    sessionModule.createDirectChat(pending.url, pending.modelId, pending.endpointId, pending.projectId);
     return true;
   }
 
@@ -876,6 +878,19 @@ function initializeEventListeners() {
     });
   }
 
+  // Projects tool button — toggles the fullscreen projects page
+  const toolProjectsBtn = el('tool-projects-btn');
+  if (toolProjectsBtn) {
+    toolProjectsBtn.addEventListener('click', () => {
+      if (!projectsModule) return;
+      if (projectsModule.isProjectsOpen?.()) {
+        projectsModule.closeProjectsPage();
+      } else {
+        projectsModule.openProjects();
+      }
+    });
+  }
+
   // Tasks tool button
   const toolTasksBtn = el('tool-tasks-btn');
   if (toolTasksBtn) {
@@ -968,9 +983,10 @@ function initializeEventListeners() {
     sb.classList.remove('hidden');
     try { window.syncRailSide && window.syncRailSide(); } catch (_) {}
   };
-  // Expose so closeEmailLibrary / notes close can call this without
-  // needing to import app.js directly.
+  // Expose so closeEmailLibrary / notes close / the projects page can call
+  // these without needing to import app.js directly.
   window._restoreSidebarIfRouteCollapsed = _restoreSidebarIfRouteCollapsed;
+  window._collapseSidebarToRail = _collapseSidebarToRail;
   // Clear the marker the moment the sidebar becomes visible again (user
   // hamburger click, or our own _restoreSidebarIfRouteCollapsed call —
   // both endpoints are the same observable state change).
@@ -1043,10 +1059,16 @@ function initializeEventListeners() {
     },
     '/memory':   () => document.getElementById('tool-memory-btn')?.click(),
     '/gallery':  () => document.getElementById('tool-gallery-btn')?.click(),
+    '/projects': () => projectsModule && projectsModule.openProjects(),
     '/tasks':    () => document.getElementById('tool-tasks-btn')?.click(),
     '/library':  () => sessionModule && sessionModule.openLibrary && sessionModule.openLibrary(),
   };
-  const _opener = _routeOpen[urlPath];
+  let _opener = _routeOpen[urlPath];
+  // Deep links: /projects/<id> opens that project's detail view directly.
+  if (!_opener && /^\/projects\/[^/]+$/.test(urlPath)) {
+    const pid = decodeURIComponent(urlPath.split('/')[2]);
+    _opener = () => projectsModule && projectsModule.openProjects(pid);
+  }
   // Defer the opener — at this point in init, the modules whose handlers
   // we trigger (#rail-new-session click handler, the email-section header
   // click handler in emailInbox, sessionModule's loaded session list) are
@@ -1338,6 +1360,7 @@ function initializeEventListeners() {
         deep_research:   ['research-toggle-btn', 'tool-research-btn', 'overflow-research-btn', 'rail-research'],
         document_editor: ['overflow-doc-btn', 'rail-documents'],
         gallery:         ['tool-gallery-btn', 'rail-gallery'],
+        projects:        ['tool-projects-btn', 'rail-projects'],
       };
       Object.entries(map).forEach(([key, ids]) => {
         if (features[key] === false) {
@@ -2477,6 +2500,7 @@ function initializeEventListeners() {
     'tool-library':        '#tool-library-btn',
     'tool-memory':         '#tool-memory-btn',
     'tool-notes':          '#tool-notes-btn',
+    'tool-projects':       '#tool-projects-btn',
     'tool-tasks':          '#tool-tasks-btn',
     'tool-theme':          '#tool-theme-btn',
     'user-bar':            '#user-bar-profile',
@@ -3492,6 +3516,7 @@ function startOdysseusApp() {
     'rail-tasks':     'tool-tasks-btn',
     'rail-calendar':  'tool-calendar-btn',
     'rail-notes':     'tool-notes-btn',
+    'rail-projects':  'tool-projects-btn',
     'rail-memory':    'tool-memory-btn',
     'rail-theme':     'tool-theme-btn',
     'rail-email':     'email-section-title',
@@ -4021,6 +4046,7 @@ function startOdysseusApp() {
   // Ensure proper initial state
   voiceRecorderModule.init();
   if (censorModule) censorModule.init();
+  if (projectsModule) projectsModule.init();
 
   // Auto-focus message input on load
   const msgEl = document.getElementById('message');

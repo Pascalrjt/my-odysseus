@@ -528,6 +528,11 @@ from routes.session_routes import setup_session_routes
 session_config = {"REQUEST_TIMEOUT": REQUEST_TIMEOUT, "OPENAI_API_KEY": OPENAI_API_KEY, "SESSIONS_FILE": SESSIONS_FILE}
 app.include_router(setup_session_routes(session_manager, session_config, webhook_manager=webhook_manager))
 
+# Projects (group chats + shared files/system prompt). rag_manager resolves
+# lazily inside the router — ChromaDB may not be up at import time.
+from routes.projects_routes import setup_projects_routes
+app.include_router(setup_projects_routes(session_manager, upload_handler))
+
 # Admin Danger Zone wipes (Settings → System → Danger Zone)
 from routes.admin_wipe_routes import setup_admin_wipe_routes
 app.include_router(setup_admin_wipe_routes(session_manager))
@@ -775,6 +780,14 @@ async def serve_tasks(request: Request):
 
 @app.get("/library")
 async def serve_library(request: Request):
+    return await serve_index(request)
+
+@app.get("/projects")
+async def serve_projects(request: Request):
+    return await serve_index(request)
+
+@app.get("/projects/{project_id}")
+async def serve_project_detail(request: Request, project_id: str):
     return await serve_index(request)
 
 @app.get("/backgrounds")

@@ -152,6 +152,154 @@ async function moveToFolder(sessionId, folderName) {
   renderSessionList();
 }
 
+/** Move a session into/out of a project via the API. Clearing sends the
+ * "__none__" sentinel — FastAPI drops empty multipart fields back to the
+ * Form(None) default, so '' would silently no-op server-side. */
+async function moveToProject(sessionId, projectId) {
+  const fd = new FormData();
+  fd.append('project_id', projectId || '__none__');
+  const res = await fetch(`${API_BASE}/api/session/${sessionId}`, { method: 'PATCH', body: fd });
+  if (!res.ok) {
+    uiModule.showError('Failed to move chat to project');
+    return;
+  }
+  const s = sessions.find(x => x.id === sessionId);
+  if (s) s.project_id = projectId || null;
+  if (sessionId === currentSessionId) _updateProjectBadge(s);
+  renderSessionList();
+}
+
+/** Build the "Move to project" submenu for a session dropdown.
+ * Mirrors buildFolderSubmenu; project list comes from the projects module
+ * (window.projectsModule) so there is no import cycle. */
+function buildProjectSubmenu(sessionId, currentProjectId, dropdown) {
+  const moveItem = document.createElement('div');
+  moveItem.className = 'dropdown-item-compact';
+  moveItem.style.position = 'relative';
+  const _projIcon = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 3h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><circle cx="12" cy="14" r="1.8"/></svg>';
+  moveItem.innerHTML = '<span class="dropdown-icon">' + _projIcon + '</span><span>Move to project</span>';
+
+  const sub = document.createElement('div');
+  sub.className = 'dropdown session-folder-submenu';
+
+  async function populate() {
+    sub.innerHTML = '';
+    const noneOpt = document.createElement('div');
+    noneOpt.className = 'dropdown-item-compact';
+    if (!currentProjectId) noneOpt.style.opacity = '0.5';
+    noneOpt.textContent = '(No project)';
+    noneOpt.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      await moveToProject(sessionId, '');
+      dropdown.style.display = 'none';
+      sub.style.display = 'none';
+    });
+    sub.appendChild(noneOpt);
+
+    let projects = [];
+    try {
+      projects = await (window.projectsModule?.getProjects?.() || []);
+    } catch (_) { /* projects unavailable — manage option still works */ }
+    (projects || []).forEach(p => {
+      const opt = document.createElement('div');
+      opt.className = 'dropdown-item-compact';
+      if (p.id === currentProjectId) opt.style.opacity = '0.5';
+      opt.textContent = p.name;
+      opt.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        await moveToProject(sessionId, p.id);
+        dropdown.style.display = 'none';
+        sub.style.display = 'none';
+      });
+      sub.appendChild(opt);
+    });
+
+    const manageOpt = document.createElement('div');
+    manageOpt.className = 'dropdown-item-compact';
+    manageOpt.style.color = 'var(--accent-primary)';
+    manageOpt.textContent = 'Manage projects…';
+    manageOpt.addEventListener('click', (e) => {
+      e.stopPropagation();
+      dropdown.style.display = 'none';
+      sub.style.display = 'none';
+      window.projectsModule?.openProjects?.();
+    });
+    sub.appendChild(manageOpt);
+  }
+
+  moveItem.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    if (sub.style.display === 'block') {
+      sub.style.display = 'none';
+      return;
+    }
+    await populate();
+    const rect = moveItem.getBoundingClientRect();
+    const isMobile = window.innerWidth <= 768;
+    sub.style.top = '-9999px';
+    sub.style.display = 'block';
+    const subRect = sub.getBoundingClientRect();
+    if (isMobile) {
+      const ddRect = dropdown.getBoundingClientRect();
+      sub.style.left = Math.max(8, ddRect.left) + 'px';
+      sub.style.width = Math.min(ddRect.width, window.innerWidth - 16) + 'px';
+      const topBelow = ddRect.bottom + 4;
+      if (topBelow + subRect.height > window.innerHeight) {
+        sub.style.top = Math.max(8, ddRect.top - subRect.height - 4) + 'px';
+      } else {
+        sub.style.top = topBelow + 'px';
+      }
+    } else {
+      sub.style.left = rect.right + 2 + 'px';
+      sub.style.width = '';
+      if (rect.top + subRect.height > window.innerHeight) {
+        sub.style.top = Math.max(2, window.innerHeight - subRect.height - 4) + 'px';
+      } else {
+        sub.style.top = rect.top + 'px';
+      }
+      if (rect.right + 2 + subRect.width > window.innerWidth - 8) {
+        sub.style.left = Math.max(8, rect.left - subRect.width - 2) + 'px';
+      }
+    }
+  });
+
+  sub.addEventListener('click', (e) => e.stopPropagation());
+  document.addEventListener('click', () => { sub.style.display = 'none'; });
+  document.body.appendChild(sub);
+
+  return moveItem;
+}
+
+/** Show/hide the project badge next to the chat title. Click opens the
+ * project page. Created lazily so index.html stays untouched. */
+function _updateProjectBadge(meta) {
+  let badge = document.getElementById('chat-project-badge');
+  const projectId = meta && meta.project_id;
+  if (!projectId) {
+    if (badge) badge.style.display = 'none';
+    return;
+  }
+  if (!badge) {
+    badge = document.createElement('span');
+    badge.id = 'chat-project-badge';
+    badge.className = 'chat-project-badge';
+    badge.title = 'Open project';
+    badge.addEventListener('click', () => {
+      window.projectsModule?.openProjects?.(badge.dataset.projectId);
+    });
+    const metaEl = document.getElementById('current-meta');
+    if (metaEl && metaEl.parentNode) metaEl.parentNode.insertBefore(badge, metaEl.nextSibling);
+  }
+  badge.dataset.projectId = projectId;
+  badge.textContent = '◳ project';
+  badge.style.display = '';
+  // Async-resolve the real name; fall back to the generic label.
+  Promise.resolve(window.projectsModule?.getProjects?.() || []).then(projects => {
+    const p = (projects || []).find(x => x.id === projectId);
+    if (p && badge.dataset.projectId === projectId) badge.textContent = '◳ ' + p.name;
+  }).catch(() => {});
+}
+
 /** Build the "Move to folder" submenu for a session dropdown. */
 function buildFolderSubmenu(sessionId, currentFolder, dropdown) {
   const folders = getFolderNames();
@@ -556,10 +704,12 @@ function createSessionItem(s) {
     }
   }
 
-  // Copy & Move to folder
+  // Copy & Move to folder / project
   const folderItem = buildFolderSubmenu(s.id, s.folder, dropdown);
+  const projectItem = buildProjectSubmenu(s.id, s.project_id, dropdown);
   dropdown.appendChild(copyItem);
   dropdown.appendChild(folderItem);
+  dropdown.appendChild(projectItem);
 
   // Separator before destructive actions
   const _sep = document.createElement('div');
@@ -1575,6 +1725,7 @@ export async function selectSession(id, { keepSidebar = false } = {}) {
     if (currentMetaEl) {
       currentMetaEl.textContent = meta ? meta.name : 'Odysseus Chat';
     }
+    _updateProjectBadge(meta);
     // Update model picker visibility
     updateModelPicker();
 
@@ -1759,9 +1910,9 @@ export async function selectSession(id, { keepSidebar = false } = {}) {
 }
 
 // Pending session — stored locally until the first message is sent
-let _pendingChat = null; // { url, modelId, endpointId }
+let _pendingChat = null; // { url, modelId, endpointId, projectId }
 
-export function createDirectChat(url, modelId, endpointId) {
+export function createDirectChat(url, modelId, endpointId, projectId) {
   _sessionNavToken++;
   // Detach any active stream so it doesn't interfere with the new chat
   if (window.chatModule && window.chatModule.detachCurrentStream) {
@@ -1774,8 +1925,10 @@ export function createDirectChat(url, modelId, endpointId) {
     if (window._syncGroupIndicator) window._syncGroupIndicator(false);
   }
 
-  // Don't hit the API — just store the model info and prepare the UI
-  _pendingChat = { url, modelId, endpointId };
+  // Don't hit the API — just store the model info and prepare the UI.
+  // projectId rides along so materializePendingSession() creates the
+  // session inside the project (there is no server session to PATCH yet).
+  _pendingChat = { url, modelId, endpointId, projectId: projectId || null };
   _skipAutoSelect = true;
   currentSessionId = null;
   Storage.remove('lastSessionId');
@@ -1811,6 +1964,7 @@ export function createDirectChat(url, modelId, endpointId) {
   if (metaEl) {
     metaEl.textContent = 'New Chat';
   }
+  _updateProjectBadge(projectId ? { project_id: projectId } : null);
 
   // Enable input
   const msgInput = document.getElementById('message');
@@ -1837,6 +1991,9 @@ export async function materializePendingSession() {
   }
   if (pending.endpointId) {
     fd.append('endpoint_id', pending.endpointId);
+  }
+  if (pending.projectId) {
+    fd.append('project_id', pending.projectId);
   }
 
   let res;

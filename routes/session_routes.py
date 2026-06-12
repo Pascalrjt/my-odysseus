@@ -91,6 +91,24 @@ def _reject_compact_during_active_run(session_id: str) -> None:
         raise HTTPException(409, "Session has an active run; try compacting after it finishes")
 
 
+def _validate_project_for_user(request: Request, project_id: str) -> str:
+    """Verify the project exists and the current user owns it. Returns the
+    project id. Raises 404 (not 403) on missing or foreign — same
+    don't-leak-existence convention as _verify_session_owner."""
+    from core.database import Project
+    user = effective_user(request)
+    db = SessionLocal()
+    try:
+        row = db.query(Project.id, Project.owner).filter(Project.id == project_id).first()
+    finally:
+        db.close()
+    if row is None:
+        raise HTTPException(404, "Project not found")
+    if user and row.owner and row.owner != user:
+        raise HTTPException(404, "Project not found")
+    return project_id
+
+
 def _verify_session_owner(request: Request, session_id: str, session_manager=None):
     """Verify the current user owns the session. Raises 404 if not.
 
@@ -262,9 +280,11 @@ def setup_session_routes(session_manager: SessionManager, config: dict, webhook_
             last_msg_map = {}
             mode_map = {}
             msg_count_map = {}
-            rows = db.query(DbSession.id, DbSession.folder, DbSession.total_input_tokens, DbSession.total_output_tokens, DbSession.is_important, DbSession.created_at, DbSession.updated_at, DbSession.last_message_at, DbSession.mode, DbSession.message_count).filter(DbSession.archived == False).all()
+            project_map = {}
+            rows = db.query(DbSession.id, DbSession.folder, DbSession.total_input_tokens, DbSession.total_output_tokens, DbSession.is_important, DbSession.created_at, DbSession.updated_at, DbSession.last_message_at, DbSession.mode, DbSession.message_count, DbSession.project_id).filter(DbSession.archived == False).all()
             for row in rows:
                 folder_map[row.id] = row.folder
+                project_map[row.id] = row.project_id
                 token_map[row.id] = (row.total_input_tokens or 0) + (row.total_output_tokens or 0)
                 important_map[row.id] = row.is_important or False
                 created_map[row.id] = row.created_at.isoformat() if row.created_at else None
@@ -306,7 +326,8 @@ def setup_session_routes(session_manager: SessionManager, config: dict, webhook_
                      "has_documents": s.id in doc_session_ids,
                      "has_images": s.id in img_session_ids,
                      "mode": mode_map.get(s.id),
-                     "message_count": msg_count_map.get(s.id, 0)}
+                     "message_count": msg_count_map.get(s.id, 0),
+                     "project_id": project_map.get(s.id)}
                     for s in user_sessions.values()
                     if not s.archived
                     and (s.name or "").strip() not in ("Nobody", "Incognito")
@@ -324,8 +345,12 @@ def setup_session_routes(session_manager: SessionManager, config: dict, webhook_
         skip_validation: str = Form(None),
         api_key: str = Form(""),
         endpoint_id: str = Form(""),
+        project_id: str = Form(""),
     ):
         skip_val = str(skip_validation).lower() == "true"
+        project_id = (project_id or "").strip()
+        if project_id:
+            _validate_project_for_user(request, project_id)
         user = get_current_user(request)
         endpoint_api_key = ""
         endpoint_base_url = ""
@@ -409,6 +434,7 @@ def setup_session_routes(session_manager: SessionManager, config: dict, webhook_
             model=model_to_use,
             rag=str(rag).lower() == "true" if rag else False,
             owner=user,
+            project_id=project_id or None,
         )
         # Set auth headers for custom API-key endpoints
         resolved_key = request_api_key
@@ -433,14 +459,15 @@ def setup_session_routes(session_manager: SessionManager, config: dict, webhook_
             name=session.name,
             model=model_to_use,
             rag=str(rag).lower() == "true" if rag else False,
-            archived=False
-        )    
+            archived=False,
+            project_id=project_id or None
+        )
     @router.patch("/session/{sid}")
     def rename_session(
         request: Request, sid: str,
         name: str = Form(None), folder: str = Form(None),
         model: str = Form(None), endpoint_url: str = Form(None),
-        endpoint_id: str = Form(None),
+        endpoint_id: str = Form(None), project_id: str = Form(None),
     ):
         _verify_session_owner(request, sid)
         try:
@@ -463,6 +490,30 @@ def setup_session_routes(session_manager: SessionManager, config: dict, webhook_
                     result["folder"] = folder if folder else None
             finally:
                 db.close()
+        # Move into/out of a project. "__none__" (or "") clears membership —
+        # an explicit sentinel is required because FastAPI drops EMPTY
+        # multipart form fields back to the Form(None) default, so a plain
+        # project_id="" never reaches this branch. From the next turn onward
+        # the chat gains/loses the project's system prompt and files —
+        # history is untouched.
+        if project_id is not None:
+            project_id = project_id.strip()
+            if project_id == "__none__":
+                project_id = ""
+            if project_id:
+                _validate_project_for_user(request, project_id)
+            db = SessionLocal()
+            try:
+                db_session = db.query(DbSession).filter(DbSession.id == sid).first()
+                if db_session:
+                    db_session.project_id = project_id or None
+                    db_session.updated_at = datetime.utcnow()
+                    db.commit()
+                    result["project_id"] = project_id or None
+            finally:
+                db.close()
+            # Refresh the cached object — the chat path reads it, not the DB.
+            session.project_id = project_id or None
         # Switch model/endpoint mid-session
         if model is not None and endpoint_url is not None:
             user = get_current_user(request)

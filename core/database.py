@@ -128,6 +128,9 @@ class Session(TimestampMixin, Base):
     total_output_tokens = Column(Integer, default=0)
     mode = Column(String, nullable=True)  # 'agent', 'chat', or 'research'
     crew_member_id = Column(String, nullable=True)  # links to crew_members.id
+    # Project membership. SET NULL so deleting a project detaches its chats
+    # without touching their history (same orphan-safety as Document.session_id).
+    project_id = Column(String, ForeignKey("projects.id", ondelete="SET NULL"), nullable=True, index=True)
 
     # Relationship to chat messages
     messages = relationship("ChatMessage", back_populates="session", cascade="all, delete-orphan")
@@ -156,6 +159,7 @@ class Session(TimestampMixin, Base):
             'total_input_tokens': self.total_input_tokens or 0,
             'total_output_tokens': self.total_output_tokens or 0,
             'crew_member_id': self.crew_member_id,
+            'project_id': self.project_id,
         }
 
 class ChatMessage(Base):
@@ -287,6 +291,72 @@ class GalleryImage(TimestampMixin, Base):
         Index('ix_gallery_images_model', 'model'),
         Index('ix_gallery_images_active', 'is_active', 'created_at'),
     )
+
+
+class Project(TimestampMixin, Base):
+    """A project groups chat sessions and gives them a shared system prompt
+    plus shared "project files" (see ProjectFile). Sessions reference projects
+    via sessions.project_id (SET NULL on delete — chats outlive their project)."""
+    __tablename__ = "projects"
+
+    id            = Column(String, primary_key=True, index=True)  # uuid4().hex
+    name          = Column(String, nullable=False)
+    description   = Column(Text, default="")
+    system_prompt = Column(Text, default="")
+    owner         = Column(String, nullable=True, index=True)
+
+    files = relationship("ProjectFile", back_populates="project",
+                         cascade="all, delete-orphan")
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'name': self.name,
+            'description': self.description or "",
+            'system_prompt': self.system_prompt or "",
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+
+class ProjectFile(TimestampMixin, Base):
+    """A file uploaded to a project, shared by every chat in that project.
+
+    Binaries live under data/project_files/{project_id}/ — deliberately
+    outside data/uploads/ so UploadHandler's age-based cleanup never touches
+    them. Extracted text is stored inline (mirrors Document.current_content)
+    so it dies transactionally with the row."""
+    __tablename__ = "project_files"
+
+    id              = Column(String, primary_key=True, index=True)  # uuid4().hex
+    project_id      = Column(String, ForeignKey("projects.id", ondelete="CASCADE"),
+                             nullable=False, index=True)
+    owner           = Column(String, nullable=True, index=True)
+    filename        = Column(String, nullable=False)        # sanitized original name
+    stored_path     = Column(String, nullable=False)        # data/project_files/{pid}/{fid}{ext}
+    mime            = Column(String, nullable=True)
+    size_bytes      = Column(Integer, default=0)
+    file_hash       = Column(String(64), nullable=True, index=True)  # SHA-256, per-project dedup
+    extracted_text  = Column(Text, nullable=True)
+    extracted_chars = Column(Integer, default=0)
+    extract_status  = Column(String, default="ok")          # ok | empty | failed | unsupported
+    indexed         = Column(Boolean, default=False)        # chunks present in vector store
+
+    project = relationship("Project", back_populates="files")
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'project_id': self.project_id,
+            'filename': self.filename,
+            'mime': self.mime,
+            'size_bytes': self.size_bytes or 0,
+            'file_hash': self.file_hash,
+            'extracted_chars': self.extracted_chars or 0,
+            'extract_status': self.extract_status,
+            'indexed': bool(self.indexed),
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+        }
 
 
 class EmailAccount(TimestampMixin, Base):
@@ -1417,6 +1487,27 @@ def _migrate_add_assistant_columns():
         logging.getLogger(__name__).warning(f"assistant columns migration: {e}")
 
 
+def _migrate_add_project_columns():
+    """Add project_id column to sessions for the Projects feature.
+
+    Must run AFTER Base.metadata.create_all so the projects table the FK
+    references already exists."""
+    try:
+        with engine.connect() as conn:
+            cols = [r[1] for r in conn.execute(text("PRAGMA table_info(sessions)"))]
+            if "project_id" not in cols:
+                conn.execute(text(
+                    "ALTER TABLE sessions ADD COLUMN project_id TEXT "
+                    "REFERENCES projects(id) ON DELETE SET NULL"))
+                conn.execute(text(
+                    "CREATE INDEX IF NOT EXISTS ix_sessions_project_id "
+                    "ON sessions (project_id)"))
+                conn.commit()
+                logging.getLogger(__name__).info("Added project_id column to sessions")
+    except Exception as e:
+        logging.getLogger(__name__).warning(f"project_id migration: {e}")
+
+
 
 
 
@@ -1621,6 +1712,7 @@ def init_db():
     _migrate_drop_ping_notes_tasks()
     _migrate_add_crew_member_id()
     _migrate_add_assistant_columns()
+    _migrate_add_project_columns()
     _migrate_add_email_smtp_security()
     _migrate_seed_email_account()
     _migrate_add_calendar_metadata()

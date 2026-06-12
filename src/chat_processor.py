@@ -170,6 +170,7 @@ class ChatProcessor:
         agent_mode: bool = False,
         incognito: bool = False,
         use_skills: bool = True,
+        project_id: Optional[str] = None,
     ) -> Tuple[List[Dict[str, str]], List[Dict[str, Any]], List[Dict[str, str]]]:
         """Build the context preface for LLM calls.
 
@@ -179,12 +180,42 @@ class ChatProcessor:
         preface = []
         rag_sources = []
 
+        # Project context (shared system prompt + files for chats in a
+        # project). Resolved up front; the two trust zones are inserted at
+        # different points below. Injects in incognito too — it is explicit
+        # user-configured session state, same class as preset prompts.
+        project_system_msg = None
+        project_context_msgs: List[Dict[str, Any]] = []
+        if project_id is None:
+            project_id = getattr(session, "project_id", None)
+        if project_id:
+            try:
+                from src.project_context import build_project_context
+                rag_mgr = getattr(self.personal_docs_manager, 'rag_manager', None)
+                # Owner from the SESSION, not the request: bearer-token calls
+                # resolve get_current_user() to "api" while the session (and
+                # project) belong to the token owner.
+                project_owner = getattr(session, "owner", None) or owner
+                project_system_msg, project_context_msgs, proj_sources = build_project_context(
+                    project_id=project_id,
+                    owner=project_owner,
+                    message=message,
+                    rag_manager=rag_mgr,
+                )
+                rag_sources.extend(proj_sources)
+            except Exception:
+                logger.warning("Project context injection failed for %s", project_id, exc_info=True)
+
         # Add preset system prompt if specified
         if preset_system_prompt:
             preface.append({
                 "role": "system",
                 "content": preset_system_prompt
             })
+        # Project system prompt: trusted (user-authored), stacks with the
+        # preset prompt — llm_core merges all system messages before the call.
+        if project_system_msg:
+            preface.append(project_system_msg)
         if not agent_mode:
             try:
                 from src.user_time import current_datetime_prompt
@@ -198,6 +229,10 @@ class ChatProcessor:
             "role": "system",
             "content": UNTRUSTED_CONTEXT_POLICY,
         })
+        # Project file listing/content: file-derived, so it goes AFTER the
+        # global untrusted-context policy (each block is also individually
+        # wrapped via untrusted_context_message).
+        preface.extend(project_context_msgs)
 
         # Memory: pinned (always included) + extended (RAG-retrieved when relevant)
         self._last_used_memories = []  # track what was injected
