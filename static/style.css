@@ -575,7 +575,8 @@ body.bg-pattern-sparkles {
       display: none;
     }
     #sidebar-search-btn,
-    #sidebar-new-chat-btn {
+    #sidebar-new-chat-btn,
+    #tool-projects-btn {
       margin: 0;
       padding: 8px 8px;
     }
@@ -4148,12 +4149,14 @@ body.bg-pattern-sparkles {
       /* Search, New Chat & Assistant */
       #sidebar-search-btn,
       #sidebar-new-chat-btn,
+      #tool-projects-btn,
       .sidebar-assistant-entry {
         padding: 12px 10px !important;
         min-height: 48px !important;
       }
       #sidebar-search-btn .grow,
       #sidebar-new-chat-btn .grow,
+      #tool-projects-btn .grow,
       .sidebar-assistant-entry .grow {
         font-size: 14px !important;
         left: 0 !important;

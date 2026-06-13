@@ -2490,8 +2490,7 @@ function initializeEventListeners() {
     'email-section':       '#email-section',
     'models-section':      '#models-section',
     'tools-section':       '#tools-section',
-    // Per-tool visibility — fine-grained control over which entries show
-    // inside the Tools section in the sidebar.
+    // Per-feature visibility — fine-grained control over sidebar entries.
     'tool-calendar':       '#tool-calendar-btn',
     'tool-compare':        '#tool-compare-btn',
     'tool-cookbook':       '#tool-cookbook-btn',
