@@ -15,6 +15,7 @@
  */
 import * as uiModule from './ui.js';
 import { styledConfirm } from './ui.js';
+import { createSessionItem } from './sessions.js';
 
 const API_BASE = window.location.origin;
 // Mirrors PROJECT_INLINE_BUDGET in src/project_context.py — display only.
@@ -96,6 +97,7 @@ export function closeProjectsPage({ navigate = true } = {}) {
   if (!_pageOpen) return;
   _pageOpen = false;
   _currentProjectId = null;
+  document.querySelectorAll('.project-session-dropdown, .project-session-submenu').forEach(d => d.remove());
   el('projects-page')?.classList.add('hidden');
   window._restoreSidebarIfRouteCollapsed?.();
   if (navigate && window.location.pathname.startsWith('/projects')) {
@@ -285,23 +287,19 @@ function _renderChats(chats) {
   const wrap = el('project-chats-list');
   if (!wrap) return;
   wrap.innerHTML = '';
+  document.querySelectorAll('.project-session-dropdown, .project-session-submenu').forEach(d => d.remove());
   if (!chats.length) {
     wrap.innerHTML = '<div class="projects-empty">No chats yet — start one above, or move an existing chat here from its ⋮ menu.</div>';
     return;
   }
   chats.forEach(c => {
-    const row = document.createElement('div');
-    row.className = 'list-item project-chat-row';
-    row.innerHTML = `
-      <span class="grow project-chat-name"></span>
-      <span class="project-file-meta">${c.message_count || 0} msg</span>`;
-    row.querySelector('.project-chat-name').textContent = c.name || 'Untitled chat';
-    row.addEventListener('click', () => {
-      // Close FIRST: selectSession replaceStates '#<id>' onto the current
-      // pathname, which would freeze the URL at /projects/<id> otherwise.
-      closeProjectsPage();
-      window.sessionModule?.selectSession?.(c.id);
-    });
+    const row = createSessionItem(c);
+    row.classList.add('project-chat-row');
+    row._sessionDropdown?.classList.add('project-session-dropdown');
+    row._sessionDropdownSubmenus?.forEach(sub => sub.classList.add('project-session-submenu'));
+    if (window.sessionModule?.getCurrentSessionId?.() === c.id) {
+      row.classList.add('active-session');
+    }
     wrap.appendChild(row);
   });
 }

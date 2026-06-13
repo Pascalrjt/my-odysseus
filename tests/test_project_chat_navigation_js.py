@@ -48,3 +48,14 @@ def test_projects_module_exposes_refresh_current_project():
     assert "_invalidate();" in _function_body(text, "export async function refreshCurrentProject()")
     assert "window.projectsModule = { getProjects, openProjects, closeProjectsPage, refreshCurrentProject" in text
     assert "export default { init, openProjects, closeProjectsPage, refreshCurrentProject" in text
+
+
+def test_project_chats_reuse_sidebar_session_item_renderer():
+    projects = PROJECTS_JS.read_text(encoding="utf-8")
+    sessions = SESSIONS_JS.read_text(encoding="utf-8")
+    body = _function_body(projects, "function _renderChats(chats)")
+    assert "import { createSessionItem } from './sessions.js';" in projects
+    assert "const row = createSessionItem(c)" in body
+    assert "project-chat-name" not in body
+    assert "export function createSessionItem(s)" in sessions
+    assert "document.querySelectorAll(`.list-item[data-session-id=\"${id}\"]`)" in sessions

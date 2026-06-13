@@ -266,6 +266,7 @@ function buildProjectSubmenu(sessionId, currentProjectId, dropdown) {
   sub.addEventListener('click', (e) => e.stopPropagation());
   document.addEventListener('click', () => { sub.style.display = 'none'; });
   document.body.appendChild(sub);
+  moveItem._sessionSubmenu = sub;
 
   return moveItem;
 }
@@ -409,12 +410,13 @@ function buildFolderSubmenu(sessionId, currentFolder, dropdown) {
   sub.addEventListener('click', (e) => e.stopPropagation());
   document.addEventListener('click', () => { sub.style.display = 'none'; });
   document.body.appendChild(sub);
+  moveItem._sessionSubmenu = sub;
 
   return moveItem;
 }
 
 /** Create a single session list-item element. */
-function createSessionItem(s) {
+export function createSessionItem(s) {
   const div = document.createElement('div');
   div.className = 'list-item session-item';
   div.setAttribute('role', 'option');
@@ -707,6 +709,10 @@ function createSessionItem(s) {
   // Copy & Move to folder / project
   const folderItem = buildFolderSubmenu(s.id, s.folder, dropdown);
   const projectItem = buildProjectSubmenu(s.id, s.project_id, dropdown);
+  div._sessionDropdownSubmenus = [
+    folderItem._sessionSubmenu,
+    projectItem._sessionSubmenu,
+  ].filter(Boolean);
   dropdown.appendChild(copyItem);
   dropdown.appendChild(folderItem);
   dropdown.appendChild(projectItem);
@@ -928,7 +934,7 @@ function _renderSessionListImpl() {
   }
 
   // Clean up any previous session dropdowns and folder submenus from body
-  document.querySelectorAll('.session-dropdown, .folder-submenu').forEach(d => d.remove());
+  document.querySelectorAll('.session-dropdown, .folder-submenu, .session-folder-submenu').forEach(d => d.remove());
 
   const _frag = document.createDocumentFragment();
 
@@ -1244,11 +1250,10 @@ function _renderSessionListImpl() {
 /** Shared post-render: highlight, keyboard nav, swipe hint, drag sort */
 function _postRenderSessionList(list) {
   if (currentSessionId) {
-    const activeEl = document.querySelector(`.list-item[data-session-id="${currentSessionId}"]`);
-    if (activeEl) {
-      activeEl.classList.add('active-session');
-      if (_sessionListFocused) activeEl.focus();
-    }
+    const activeEls = document.querySelectorAll(`.list-item[data-session-id="${currentSessionId}"]`);
+    activeEls.forEach(el => el.classList.add('active-session'));
+    const sidebarActiveEl = list.querySelector(`.list-item[data-session-id="${currentSessionId}"]`);
+    if (sidebarActiveEl && _sessionListFocused) sidebarActiveEl.focus();
   }
 
   _initKeyboardNav(list);
@@ -1726,8 +1731,9 @@ export async function selectSession(id, { keepSidebar = false } = {}) {
 
     // Highlight active session in sidebar
     document.querySelectorAll('.list-item.active-session').forEach(el => el.classList.remove('active-session'));
-    const activeEl = document.querySelector(`.list-item[data-session-id="${id}"]`);
-    if (activeEl) activeEl.classList.add('active-session');
+    document.querySelectorAll(`.list-item[data-session-id="${id}"]`).forEach(el => {
+      el.classList.add('active-session');
+    });
 
     const currentMetaEl = uiModule.el('current-meta');
     if (currentMetaEl) {

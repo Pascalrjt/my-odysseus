@@ -176,6 +176,9 @@ def test_get_project_includes_files_and_chats(projects_api):
     get = _route(projects_api.router, "/api/projects/{pid}", "GET")
     out = get(request=None, pid=pid)
     assert [c["id"] for c in out["chats"]] == ["s1"]
+    assert out["chats"][0]["project_id"] == pid
+    assert out["chats"][0]["is_important"] is False
+    assert out["chats"][0]["mode"] is None
     assert out["files"] == []
 
 
