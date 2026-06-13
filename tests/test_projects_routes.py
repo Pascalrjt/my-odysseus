@@ -183,6 +183,78 @@ def test_get_project_includes_files_and_chats(projects_api):
 # Session-side wiring
 # ---------------------------------------------------------------------------
 
+def test_session_create_with_project_appears_in_project_and_sessions(monkeypatch):
+    import routes.session_routes as sr
+    _wipe()
+    monkeypatch.setattr(sr, "SessionLocal", _TS)
+    monkeypatch.setattr(sr, "effective_user", lambda request: "alice")
+    monkeypatch.setattr(sr, "get_current_user", lambda request: None)
+    pid = _seed_project()
+
+    class FakeSessionManager:
+        def __init__(self):
+            self.sessions = {}
+
+        def create_session(self, session_id, name, endpoint_url, model, rag=False,
+                           owner=None, project_id=None):
+            db = _TS()
+            try:
+                db.add(DbSession(
+                    id=session_id,
+                    name=name,
+                    endpoint_url=endpoint_url,
+                    model=model,
+                    rag=rag,
+                    owner=owner,
+                    project_id=project_id,
+                ))
+                db.commit()
+            finally:
+                db.close()
+            session = SimpleNamespace(
+                id=session_id,
+                name=name,
+                endpoint_url=endpoint_url,
+                model=model,
+                rag=rag,
+                archived=False,
+                headers={},
+                project_id=project_id,
+            )
+            self.sessions[session_id] = session
+            return session
+
+        def get_sessions_for_user(self, user):
+            return self.sessions
+
+    session_manager = FakeSessionManager()
+    router = sr.setup_session_routes(session_manager, {})
+    create = _route(router, "/api/session", "POST")
+    payload = create(
+        request=None,
+        name="project chat",
+        endpoint_url="http://x/v1/chat/completions",
+        model="m",
+        rag=None,
+        skip_validation="true",
+        api_key="",
+        endpoint_id="",
+        project_id=pid,
+    )
+    assert payload.project_id == pid
+
+    import routes.projects_routes as pr
+    monkeypatch.setattr(pr, "SessionLocal", _TS)
+    monkeypatch.setattr(pr, "effective_user", lambda request: "alice")
+    projects_router = pr.setup_projects_routes(SimpleNamespace(sessions={}), FakeUploadHandler(), None)
+    project_out = _route(projects_router, "/api/projects/{pid}", "GET")(request=None, pid=pid)
+    assert [c["id"] for c in project_out["chats"]] == [payload.id]
+
+    listing = _route(router, "/api/sessions", "GET")(request=None)
+    by_id = {s["id"]: s for s in listing}
+    assert by_id[payload.id]["project_id"] == pid
+
+
 @pytest.fixture
 def session_patch(monkeypatch):
     import routes.session_routes as sr

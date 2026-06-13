@@ -1654,6 +1654,9 @@ export async function selectSession(id, { keepSidebar = false } = {}) {
       try { window.documentModule.clearSelection(); } catch {}
     }
     currentSessionId = id;
+    if (window.projectsModule?.isProjectsOpen?.()) {
+      window.projectsModule.closeProjectsPage({ navigate: false });
+    }
     // Identify Assistant / task-output sessions so we don't "trap" the user
     // there on return. Skipped from both `lastSessionId` persistence and the
     // URL hash — the user complained that coming back to Odysseus kept
@@ -1663,10 +1666,15 @@ export async function selectSession(id, { keepSidebar = false } = {}) {
     const _isTransientChat = !!_meta && (_meta.folder === 'Assistant' || _meta.folder === 'Tasks');
     if (!_isTransientChat) {
       Storage.set('lastSessionId', id);
-      // Update URL hash without triggering hashchange handler
-      if (window.location.hash !== '#' + id) {
-        history.replaceState(null, '', '#' + id);
+      // Update URL hash without triggering hashchange handler. Use an
+      // absolute chat route so selecting from /projects/<id> cannot leave the
+      // project page's path behind with a chat hash.
+      const targetUrl = '/#' + id;
+      if (window.location.pathname !== '/' || window.location.hash !== '#' + id) {
+        history.replaceState(null, '', targetUrl);
       }
+    } else if (window.location.pathname !== '/' || window.location.hash) {
+      history.replaceState(null, '', '/');
     }
     // Restore character preset for persistent chats
     try {
@@ -2026,11 +2034,14 @@ export async function materializePendingSession() {
   }
   currentSessionId = payload.id;
   Storage.set('lastSessionId', payload.id);
-  history.replaceState(null, '', '#' + payload.id);
+  history.replaceState(null, '', '/#' + payload.id);
 
   // Reload sidebar to show the new session — await it so the session
   // is fully registered before the caller proceeds (prevents race conditions)
   await loadSessions().catch(() => {});
+  if (payload.project_id) {
+    try { await window.projectsModule?.refreshCurrentProject?.(); } catch (_) {}
+  }
   return true;
 }
 

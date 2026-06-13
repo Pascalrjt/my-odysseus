@@ -53,6 +53,13 @@ async function _getProject(pid) {
   return res.json();
 }
 
+export async function refreshCurrentProject() {
+  _invalidate();
+  if (_pageOpen && _currentProjectId) {
+    await _showDetail(_currentProjectId);
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Open / close / URL
 // ---------------------------------------------------------------------------
@@ -448,7 +455,7 @@ export function init() {
 
   // Expose for sessions.js (badge, move-to-project submenu) and app.js
   // (sidebar/rail button, route opener) — no import cycle.
-  window.projectsModule = { getProjects, openProjects, closeProjectsPage, isProjectsOpen, init };
+  window.projectsModule = { getProjects, openProjects, closeProjectsPage, refreshCurrentProject, isProjectsOpen, init };
 }
 
-export default { init, openProjects, closeProjectsPage, isProjectsOpen, getProjects };
+export default { init, openProjects, closeProjectsPage, refreshCurrentProject, isProjectsOpen, getProjects };
