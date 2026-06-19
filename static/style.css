@@ -9124,6 +9124,99 @@ body.hide-thinking .thinking-section { display: none !important; }
   line-height: 1.5;
 }
 
+/* ===== DOCUMENT MODE — full-width borderless AI replies (Settings toggle) =====
+   Scoped under body.doc-chat. User bubbles (.msg-user) and the AI role label
+   (.msg .role) are intentionally left untouched. */
+body.doc-chat .msg-ai {
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  width: 100%;
+  max-width: 100%;
+  margin-left: 0;
+  margin-right: 0;
+  padding-left: 0;
+  padding-right: 0;
+  overflow: visible;            /* bubble clipped overflow; documents shouldn't */
+}
+body.doc-chat .msg-ai.generated-image-wrap {
+  background: transparent;
+  border: none;
+}
+
+/* Reasoning ("thinking") block — drop the red tint + border. */
+body.doc-chat .thinking-section {
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  margin: 8px 0;
+}
+body.doc-chat .thinking-header {
+  background: transparent;
+  border-bottom: none;
+  padding-left: 0;
+  padding-right: 0;
+}
+body.doc-chat .thinking-header:hover {
+  background: transparent;
+}
+body.doc-chat .thinking-content,
+body.doc-chat .thinking-content.expanded {
+  padding-left: 0;
+  padding-right: 0;
+}
+
+/* Tool-step timeline — undo the bubble-column offset (margin-left:28px,
+   max-width: calc(85% - 20px)) and neutralize the red rail/dots, full width. */
+body.doc-chat .agent-thread {
+  margin-left: 0;
+  max-width: 100%;
+  padding-left: 22px;
+}
+body.doc-chat .agent-thread::before {
+  background: color-mix(in srgb, var(--fg) 14%, transparent);
+}
+body.doc-chat .agent-thread-dot,
+body.doc-chat .agent-thread-node.running .agent-thread-dot {
+  background: color-mix(in srgb, var(--fg) 35%, transparent);
+}
+body.doc-chat .agent-thread-icon,
+body.doc-chat .agent-thread-tool {
+  color: color-mix(in srgb, var(--fg) 70%, transparent);
+}
+
+/* Tool output / command boxes — neutral, borderless. */
+body.doc-chat .agent-tool-output {
+  background: transparent;
+  border: 1px solid color-mix(in srgb, var(--fg) 12%, transparent);
+}
+body.doc-chat .agent-tool-output[open] {
+  background: transparent;
+}
+body.doc-chat .agent-tool-output summary {
+  background: transparent;
+  border-bottom: 1px solid color-mix(in srgb, var(--fg) 10%, transparent);
+  color: color-mix(in srgb, var(--fg) 70%, transparent);
+}
+body.doc-chat .agent-tool-output summary:hover {
+  background: color-mix(in srgb, var(--fg) 5%, transparent);
+}
+body.doc-chat .agent-tool-output summary::after {
+  color: color-mix(in srgb, var(--fg) 60%, transparent);
+}
+
+/* Sources / citations box — same flattening. */
+body.doc-chat .sources-section {
+  border: 1px solid color-mix(in srgb, var(--fg) 12%, transparent);
+}
+body.doc-chat .sources-header {
+  background: transparent;
+  border-bottom: 1px solid color-mix(in srgb, var(--fg) 10%, transparent);
+}
+body.doc-chat .sources-header:hover {
+  background: color-mix(in srgb, var(--fg) 5%, transparent);
+}
+
 /* Mobile responsive styles */
 @media (max-width: 768px) {
   #recording-indicator {
@@ -36625,6 +36718,9 @@ body.theme-frosted .modal {
   font-size: 12px;
 }
 .projects-page.hidden { display: none; }
+body.projects-page-open #model-picker-wrap {
+  display: none !important;
+}
 .projects-page-inner {
   max-width: 1100px;
   margin: 0 auto;

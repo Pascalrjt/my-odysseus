@@ -2452,7 +2452,7 @@ function initializeEventListeners() {
   };
 
   // Keys hidden by default on first run (no localStorage yet)
-  const UI_VIS_DEFAULT_OFF = new Set(['models-section', 'rag-toggle-btn', 'text-emojis']);
+  const UI_VIS_DEFAULT_OFF = new Set(['models-section', 'rag-toggle-btn', 'text-emojis', 'doc-chat']);
 
   // Keys that need admin to toggle off (reserved for future use)
   const UI_VIS_ADMIN_ONLY = new Set([]);
@@ -2485,6 +2485,9 @@ function initializeEventListeners() {
     applyTextEmojis(state['text-emojis'] === true);
     // Hide thinking sections toggle (show-thinking: checked=show, unchecked=hide)
     document.body.classList.toggle('hide-thinking', state['show-thinking'] === false);
+    // Document mode: full-width borderless AI replies instead of chat bubbles
+    // (doc-chat: checked=on). Default OFF via UI_VIS_DEFAULT_OFF.
+    document.body.classList.toggle('doc-chat', state['doc-chat'] === true);
   }
 
   // Rearrange toggles in session/model sort dropdowns

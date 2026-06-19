@@ -1611,6 +1611,10 @@ export async function loadSessions() {
       const s = sessions.find(x => x.id === targetId);
       const metaEl = document.getElementById('current-meta');
       if (metaEl && s) metaEl.textContent = s.name;
+      _updateProjectBadge(s);
+      if (s && s.project_id) {
+        try { await window.projectsModule?.refreshCurrentProject?.(); } catch (_) {}
+      }
     }
 
     // No session selected — still enable input so slash commands (e.g. /setup) work
@@ -2053,6 +2057,16 @@ export async function materializePendingSession() {
 
 export function hasPendingChat() { return !!_pendingChat; }
 export function getPendingChat() { return _pendingChat; }
+export function setPendingChat(next) {
+  if (!next) {
+    _pendingChat = null;
+    return;
+  }
+  const projectId = Object.prototype.hasOwnProperty.call(next, 'projectId')
+    ? next.projectId
+    : (_pendingChat && _pendingChat.projectId);
+  _pendingChat = { ...next, projectId: projectId || null };
+}
 // Getters for external access
 export function getCurrentSessionId() {
   return currentSessionId;
@@ -2417,7 +2431,7 @@ function _initAllDropdowns() {
     getCurrentSessionId: () => currentSessionId,
     getSessions: () => sessions,
     getPendingChat: () => _pendingChat,
-    setPendingChat: (v) => { _pendingChat = v; },
+    setPendingChat,
     createDirectChat,
   });
   _initDropdownDismiss();
@@ -3280,6 +3294,7 @@ const sessionModule = {
   materializePendingSession,
   hasPendingChat,
   getPendingChat,
+  setPendingChat,
   getCurrentSessionId,
   getSessions,
   getCurrentModel,

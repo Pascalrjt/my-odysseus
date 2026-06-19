@@ -10,6 +10,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 SESSIONS_JS = ROOT / "static/js/sessions.js"
 PROJECTS_JS = ROOT / "static/js/projects.js"
+STYLE_CSS = ROOT / "static/style.css"
 
 
 def _function_body(source: str, signature: str) -> str:
@@ -42,6 +43,28 @@ def test_materialize_pending_project_chat_refreshes_project_state():
     assert "window.projectsModule?.refreshCurrentProject?.()" in body
 
 
+def test_load_sessions_refreshes_active_project_metadata():
+    body = _function_body(
+        SESSIONS_JS.read_text(encoding="utf-8"),
+        "export async function loadSessions()",
+    )
+    same_session = body[body.index("} else if (targetId && targetId === currentSessionId) {"):]
+    same_session = same_session[:same_session.index("\n    }\n\n    // No session selected")]
+    assert "_updateProjectBadge(s)" in same_session
+    assert "if (s && s.project_id)" in same_session
+    assert "window.projectsModule?.refreshCurrentProject?.()" in same_session
+
+
+def test_pending_project_chat_survives_model_picker_switch():
+    sessions = SESSIONS_JS.read_text(encoding="utf-8")
+    body = _function_body(sessions, "export function setPendingChat(next)")
+    assert "Object.prototype.hasOwnProperty.call(next, 'projectId')" in body
+    assert "_pendingChat && _pendingChat.projectId" in body
+    assert "_pendingChat = { ...next, projectId: projectId || null }" in body
+    assert "setPendingChat," in sessions
+    assert "setPendingChat: (v) => { _pendingChat = v; }" not in sessions
+
+
 def test_projects_module_exposes_refresh_current_project():
     text = PROJECTS_JS.read_text(encoding="utf-8")
     assert "export async function refreshCurrentProject()" in text
@@ -59,3 +82,24 @@ def test_project_chats_reuse_sidebar_session_item_renderer():
     assert "project-chat-name" not in body
     assert "export function createSessionItem(s)" in sessions
     assert "document.querySelectorAll(`.list-item[data-session-id=\"${id}\"]`)" in sessions
+
+
+def test_projects_page_hides_global_model_picker():
+    projects = PROJECTS_JS.read_text(encoding="utf-8")
+    styles = STYLE_CSS.read_text(encoding="utf-8")
+    assert "function _setProjectsPageOpen(open)" in projects
+    assert "document.body?.classList.toggle('projects-page-open', !!open)" in projects
+    assert "el('model-picker-menu')?.classList.add('hidden')" in projects
+    assert "_setProjectsPageOpen(true)" in _function_body(
+        projects,
+        "export async function openProjects(projectId = null)",
+    )
+    assert "_setProjectsPageOpen(false)" in _function_body(
+        projects,
+        "export function closeProjectsPage({ navigate = true } = {})",
+    )
+    assert "body.projects-page-open #model-picker-wrap" in styles
+    assert "display: none !important;" in _function_body(
+        styles,
+        "body.projects-page-open #model-picker-wrap",
+    )

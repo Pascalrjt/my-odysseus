@@ -30,6 +30,13 @@ let _searchQuery = '';
 
 const el = (id) => document.getElementById(id);
 
+function _setProjectsPageOpen(open) {
+  document.body?.classList.toggle('projects-page-open', !!open);
+  if (open) {
+    el('model-picker-menu')?.classList.add('hidden');
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Data
 // ---------------------------------------------------------------------------
@@ -85,6 +92,7 @@ export async function openProjects(projectId = null) {
     page.classList.remove('hidden');
     window._collapseSidebarToRail?.();
   }
+  _setProjectsPageOpen(true);
   _setUrl(projectId);
   if (projectId) {
     await _showDetail(projectId);
@@ -94,11 +102,15 @@ export async function openProjects(projectId = null) {
 }
 
 export function closeProjectsPage({ navigate = true } = {}) {
-  if (!_pageOpen) return;
+  if (!_pageOpen) {
+    _setProjectsPageOpen(false);
+    return;
+  }
   _pageOpen = false;
   _currentProjectId = null;
   document.querySelectorAll('.project-session-dropdown, .project-session-submenu').forEach(d => d.remove());
   el('projects-page')?.classList.add('hidden');
+  _setProjectsPageOpen(false);
   window._restoreSidebarIfRouteCollapsed?.();
   if (navigate && window.location.pathname.startsWith('/projects')) {
     history.pushState({}, '', '/' + _returnHash);
